@@ -53,7 +53,7 @@ export default function ReportesPage() {
   const loadData = async () => {
     try {
       const [ubicRes, catRes, prodRes, invRes] = await Promise.all([
-        supabase.from('ubicaciones').select('*').eq('activa', true).order('nombre'),
+        supabase.from('ubicaciones').select('*').eq('activa', true).order('orden'),
         supabase.from('categorias').select('*').eq('activa', true).order('orden'),
         supabase
           .from('productos')
