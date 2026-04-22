@@ -215,7 +215,6 @@ export default function ReportesPage() {
     const white: [number, number, number] = [255, 255, 255]
 
     let logoBase64: string | null = null
-    const pagesWithHeader: Set<number> = new Set()
 
     // Cargar logo
     try {
@@ -230,49 +229,41 @@ export default function ReportesPage() {
       logoBase64 = null
     }
 
-    // Funcion para dibujar header (solo si no se ha dibujado en esta pagina)
-    const drawHeader = (pageNum: number) => {
-      if (pagesWithHeader.has(pageNum)) return
-      pagesWithHeader.add(pageNum)
+    // Dibujar header completo SOLO en primera pagina
+    // Linea superior
+    doc.setFillColor(...primary)
+    doc.rect(0, 0, pageWidth, 3, 'F')
 
-      // Linea superior
-      doc.setFillColor(...primary)
-      doc.rect(0, 0, pageWidth, 3, 'F')
-
-      // Logo
-      if (logoBase64) {
-        doc.addImage(logoBase64, 'PNG', 14, 8, 25, 25)
-      } else {
-        doc.setFontSize(20)
-        doc.setFont('helvetica', 'bold')
-        doc.setTextColor(...primary)
-        doc.text('S', 22, 22)
-      }
-
-      // Titulo al lado del logo
-      doc.setFontSize(22)
+    // Logo
+    if (logoBase64) {
+      doc.addImage(logoBase64, 'PNG', 14, 8, 25, 25)
+    } else {
+      doc.setFontSize(20)
       doc.setFont('helvetica', 'bold')
       doc.setTextColor(...primary)
-      doc.text('SANTORINI', 44, 18)
-      doc.setFontSize(10)
-      doc.setFont('helvetica', 'normal')
-      doc.setTextColor(100, 100, 100)
-      doc.text('TERRAZA BAR', 44, 24)
-
-      // Info derecha
-      doc.setFontSize(9)
-      doc.setTextColor(100, 100, 100)
-      doc.text('Reporte de Inventario', pageWidth - 14, 15, { align: 'right' })
-      doc.text(date, pageWidth - 14, 21, { align: 'right' })
-
-      // Linea separadora
-      doc.setDrawColor(...primary)
-      doc.setLineWidth(0.5)
-      doc.line(14, 38, pageWidth - 14, 38)
+      doc.text('S', 22, 22)
     }
 
-    // Dibujar header en primera pagina
-    drawHeader(1)
+    // Titulo al lado del logo
+    doc.setFontSize(22)
+    doc.setFont('helvetica', 'bold')
+    doc.setTextColor(...primary)
+    doc.text('SANTORINI', 44, 18)
+    doc.setFontSize(10)
+    doc.setFont('helvetica', 'normal')
+    doc.setTextColor(100, 100, 100)
+    doc.text('TERRAZA BAR', 44, 24)
+
+    // Info derecha
+    doc.setFontSize(9)
+    doc.setTextColor(100, 100, 100)
+    doc.text('Reporte de Inventario', pageWidth - 14, 15, { align: 'right' })
+    doc.text(date, pageWidth - 14, 21, { align: 'right' })
+
+    // Linea separadora
+    doc.setDrawColor(...primary)
+    doc.setLineWidth(0.5)
+    doc.line(14, 38, pageWidth - 14, 38)
 
     // Titulo principal
     doc.setFontSize(16)
@@ -315,7 +306,7 @@ export default function ReportesPage() {
     doc.text(`${resumen.productosConStock} con stock`, col1X + 50, row2Y)
 
     let currentY = boxY + boxHeight + 15
-    const headerHeight = 45
+    const topMargin = 12 // Solo espacio para la linea decorativa en paginas 2+
     const footerHeight = 15
 
     // Agrupar por categoria y ordenar por subcategoria y cantidad
@@ -339,9 +330,7 @@ export default function ReportesPage() {
       // Verificar si hay espacio para el titulo + al menos unas filas
       if (currentY > pageHeight - 70) {
         doc.addPage()
-        const pageNum = doc.getNumberOfPages()
-        drawHeader(pageNum)
-        currentY = headerHeight
+        currentY = topMargin
       }
 
       // Titulo de categoria
@@ -408,23 +397,27 @@ export default function ReportesPage() {
           2: { halign: 'right', cellWidth: 35 },
           3: { halign: 'right', cellWidth: 40, fontStyle: 'bold' },
         },
-        margin: { left: 14, right: 14, top: headerHeight, bottom: footerHeight },
-        didDrawPage: (data: any) => {
-          const pageNum = data.pageNumber
-          drawHeader(pageNum)
-        },
+        margin: { left: 14, right: 14, top: topMargin, bottom: footerHeight },
       })
 
       currentY = (doc as any).lastAutoTable.finalY + 12
     })
 
-    // Agregar footers a todas las paginas
+    // Agregar lineas decorativas y footers a todas las paginas
     const totalPages = doc.getNumberOfPages()
     for (let i = 1; i <= totalPages; i++) {
       doc.setPage(i)
+
+      // Linea superior (en todas las paginas, la pagina 1 ya la tiene)
+      if (i > 1) {
+        doc.setFillColor(...primary)
+        doc.rect(0, 0, pageWidth, 3, 'F')
+      }
+
       // Linea inferior
       doc.setFillColor(...primary)
       doc.rect(0, pageHeight - 3, pageWidth, 3, 'F')
+
       // Texto de pagina
       doc.setFontSize(8)
       doc.setTextColor(150, 150, 150)
