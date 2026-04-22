@@ -24,7 +24,9 @@ interface TotalProducto {
   producto_nombre: string
   precio: number
   categoria: string
+  categoria_orden: number
   subcategoria: string | null
+  subcategoria_orden: number
   cantidad_total: number
   valor_total: number
   por_ubicacion: Record<string, number>
@@ -96,7 +98,9 @@ export default function ReportesPage() {
           producto_nombre: prod.nombre,
           precio: prod.precio,
           categoria: prod.categorias?.nombre || 'Sin categoria',
+          categoria_orden: prod.categorias?.orden || 999,
           subcategoria: prod.subcategorias?.nombre || null,
+          subcategoria_orden: prod.subcategorias?.orden || 999,
           cantidad_total: cantidadTotal,
           valor_total: valorProducto,
           por_ubicacion: porUbicacion,
@@ -310,16 +314,20 @@ export default function ReportesPage() {
     const footerHeight = 15
 
     // Agrupar por categoria y ordenar por subcategoria y cantidad
-    const categoriasList = Object.keys(groupedTotales).sort()
+    const categoriasList = Object.keys(groupedTotales).sort((a, b) => {
+      const ordenA = groupedTotales[a][0]?.categoria_orden || 999
+      const ordenB = groupedTotales[b][0]?.categoria_orden || 999
+      return ordenA - ordenB
+    })
 
     categoriasList.forEach((categoria) => {
       const productos = groupedTotales[categoria]
 
-      // Ordenar productos: primero por subcategoria, luego por cantidad (menor a mayor)
+      // Ordenar productos: primero por orden de subcategoria, luego por cantidad (menor a mayor)
       const productosOrdenados = [...productos].sort((a, b) => {
-        const subA = a.subcategoria || ''
-        const subB = b.subcategoria || ''
-        if (subA !== subB) return subA.localeCompare(subB)
+        if (a.subcategoria_orden !== b.subcategoria_orden) {
+          return a.subcategoria_orden - b.subcategoria_orden
+        }
         return a.cantidad_total - b.cantidad_total
       })
 
@@ -350,6 +358,7 @@ export default function ReportesPage() {
       // Preparar datos de tabla con agrupacion por subcategoria
       const tableData: any[] = []
       let currentSubcat = ''
+      let subcatNumber = 0
 
       productosOrdenados.forEach((prod) => {
         const subcat = prod.subcategoria || 'Sin subcategoria'
@@ -358,8 +367,9 @@ export default function ReportesPage() {
         if (subcat !== currentSubcat) {
           currentSubcat = subcat
           if (prod.subcategoria) {
+            subcatNumber++
             tableData.push([
-              { content: `► ${subcat}`, colSpan: 4, styles: { fontStyle: 'bold', fillColor: [235, 230, 235], textColor: primary } }
+              { content: `${subcatNumber}. ${subcat}`, colSpan: 4, styles: { fontStyle: 'bold', fillColor: [235, 230, 235], textColor: primary } }
             ])
           }
         }
