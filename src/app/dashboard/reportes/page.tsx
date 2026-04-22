@@ -439,7 +439,206 @@ export default function ReportesPage() {
       )
     }
 
-    doc.save(`inventario-santorini-${new Date().toISOString().split('T')[0]}.pdf`)
+    doc.save(`inventario-categorias-${new Date().toISOString().split('T')[0]}.pdf`)
+  }
+
+  const exportToPDFUbicaciones = async () => {
+    const jsPDF = (await import('jspdf')).default
+    await import('jspdf-autotable')
+
+    const doc = new jsPDF()
+    const pageWidth = doc.internal.pageSize.getWidth()
+    const pageHeight = doc.internal.pageSize.getHeight()
+    const date = new Date().toLocaleDateString('es-CO', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    })
+
+    // Colores Santorini
+    const primary: [number, number, number] = [32, 0, 32]
+    const primaryLight: [number, number, number] = [245, 240, 245]
+    const grayDark: [number, number, number] = [51, 51, 51]
+    const white: [number, number, number] = [255, 255, 255]
+
+    let logoBase64: string | null = null
+
+    // Cargar logo
+    try {
+      const logoResponse = await fetch('/logo.png')
+      const logoBlob = await logoResponse.blob()
+      logoBase64 = await new Promise<string>((resolve) => {
+        const reader = new FileReader()
+        reader.onloadend = () => resolve(reader.result as string)
+        reader.readAsDataURL(logoBlob)
+      })
+    } catch (e) {
+      logoBase64 = null
+    }
+
+    // Header primera pagina
+    doc.setFillColor(...primary)
+    doc.rect(0, 0, pageWidth, 3, 'F')
+
+    if (logoBase64) {
+      doc.addImage(logoBase64, 'PNG', 14, 8, 25, 25)
+    }
+
+    doc.setFontSize(22)
+    doc.setFont('helvetica', 'bold')
+    doc.setTextColor(...primary)
+    doc.text('SANTORINI', 44, 18)
+    doc.setFontSize(10)
+    doc.setFont('helvetica', 'normal')
+    doc.setTextColor(100, 100, 100)
+    doc.text('TERRAZA BAR', 44, 24)
+
+    doc.setFontSize(9)
+    doc.text('Reporte por Ubicaciones', pageWidth - 14, 15, { align: 'right' })
+    doc.text(date, pageWidth - 14, 21, { align: 'right' })
+
+    doc.setDrawColor(...primary)
+    doc.setLineWidth(0.5)
+    doc.line(14, 38, pageWidth - 14, 38)
+
+    // Titulo
+    doc.setFontSize(16)
+    doc.setTextColor(...primary)
+    doc.setFont('helvetica', 'bold')
+    doc.text('Reporte por Ubicaciones', 14, 50)
+
+    // Resumen
+    const boxY = 56
+    const boxHeight = 32
+    doc.setFillColor(250, 250, 250)
+    doc.setDrawColor(220, 220, 220)
+    doc.roundedRect(14, boxY, pageWidth - 28, boxHeight, 3, 3, 'FD')
+
+    doc.setFontSize(10)
+    doc.setFont('helvetica', 'bold')
+    doc.setTextColor(...primary)
+    doc.text('Resumen General', pageWidth / 2, boxY + 8, { align: 'center' })
+
+    doc.setFont('helvetica', 'normal')
+    doc.setTextColor(...grayDark)
+    doc.text('Valor Total:', 24, boxY + 16)
+    doc.setFont('helvetica', 'bold')
+    doc.text(formatCurrency(resumen.valorTotal), 74, boxY + 16)
+
+    doc.setFont('helvetica', 'normal')
+    doc.text('Total Unidades:', pageWidth / 2 + 10, boxY + 16)
+    doc.setFont('helvetica', 'bold')
+    doc.text(resumen.unidadesTotal.toLocaleString(), pageWidth / 2 + 60, boxY + 16)
+
+    doc.setFont('helvetica', 'normal')
+    doc.text('Ubicaciones:', 24, boxY + 24)
+    doc.setFont('helvetica', 'bold')
+    doc.text(`${ubicaciones.length} activas`, 74, boxY + 24)
+
+    let currentY = boxY + boxHeight + 15
+    const topMargin = 12
+    const footerHeight = 15
+
+    // Iterar por cada ubicacion
+    ubicaciones.forEach((ubicacion) => {
+      // Obtener productos en esta ubicacion
+      const productosEnUbicacion = totales
+        .filter(prod => (prod.por_ubicacion[ubicacion.id] || 0) > 0)
+        .map(prod => ({
+          ...prod,
+          cantidad_ubicacion: prod.por_ubicacion[ubicacion.id] || 0,
+          valor_ubicacion: (prod.por_ubicacion[ubicacion.id] || 0) * prod.precio
+        }))
+        .sort((a, b) => a.cantidad_ubicacion - b.cantidad_ubicacion)
+
+      if (productosEnUbicacion.length === 0) return
+
+      const ubicacionTotal = productosEnUbicacion.reduce((sum, p) => sum + p.valor_ubicacion, 0)
+      const ubicacionUnidades = productosEnUbicacion.reduce((sum, p) => sum + p.cantidad_ubicacion, 0)
+
+      // Verificar espacio
+      if (currentY > pageHeight - 70) {
+        doc.addPage()
+        currentY = topMargin
+      }
+
+      // Titulo ubicacion
+      doc.setFillColor(...primary)
+      doc.roundedRect(14, currentY, pageWidth - 28, 10, 2, 2, 'F')
+      doc.setFontSize(11)
+      doc.setFont('helvetica', 'bold')
+      doc.setTextColor(...white)
+      doc.text(ubicacion.nombre, 18, currentY + 7)
+
+      doc.setFontSize(9)
+      doc.text(`${ubicacionUnidades} uds. | ${formatCurrency(ubicacionTotal)}`, pageWidth - 18, currentY + 7, { align: 'right' })
+
+      currentY += 14
+
+      // Tabla de productos
+      const tableData = productosEnUbicacion.map(prod => [
+        prod.producto_nombre,
+        prod.categoria,
+        prod.cantidad_ubicacion.toString(),
+        formatCurrency(prod.precio),
+        formatCurrency(prod.valor_ubicacion),
+      ])
+
+      ;(doc as any).autoTable({
+        startY: currentY,
+        head: [['Producto', 'Categoria', 'Cant.', 'Precio', 'Valor']],
+        body: tableData,
+        styles: {
+          fontSize: 8,
+          cellPadding: 2,
+          textColor: grayDark,
+        },
+        headStyles: {
+          fillColor: [80, 40, 80],
+          textColor: white,
+          fontStyle: 'bold',
+          halign: 'center',
+        },
+        alternateRowStyles: {
+          fillColor: primaryLight,
+        },
+        columnStyles: {
+          0: { cellWidth: 60 },
+          1: { cellWidth: 35 },
+          2: { halign: 'center', cellWidth: 15 },
+          3: { halign: 'right', cellWidth: 30 },
+          4: { halign: 'right', cellWidth: 35, fontStyle: 'bold' },
+        },
+        margin: { left: 14, right: 14, top: topMargin, bottom: footerHeight },
+      })
+
+      currentY = (doc as any).lastAutoTable.finalY + 12
+    })
+
+    // Footers
+    const totalPages = doc.getNumberOfPages()
+    for (let i = 1; i <= totalPages; i++) {
+      doc.setPage(i)
+
+      if (i > 1) {
+        doc.setFillColor(...primary)
+        doc.rect(0, 0, pageWidth, 3, 'F')
+      }
+
+      doc.setFillColor(...primary)
+      doc.rect(0, pageHeight - 3, pageWidth, 3, 'F')
+
+      doc.setFontSize(8)
+      doc.setTextColor(150, 150, 150)
+      doc.text(
+        `Santorini Terraza Bar - Pagina ${i} de ${totalPages}`,
+        pageWidth / 2,
+        pageHeight - 7,
+        { align: 'center' }
+      )
+    }
+
+    doc.save(`inventario-ubicaciones-${new Date().toISOString().split('T')[0]}.pdf`)
   }
 
   if (loading) {
@@ -460,14 +659,18 @@ export default function ReportesPage() {
             <h1 className="text-2xl font-bold text-gray-800">Reportes</h1>
             <p className="text-gray-500 mt-1">Totales y exportacion de inventario</p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button variant="secondary" onClick={exportToExcel}>
               <FileSpreadsheet size={20} />
               Excel
             </Button>
             <Button variant="secondary" onClick={exportToPDF}>
               <FileText size={20} />
-              PDF
+              PDF Categorias
+            </Button>
+            <Button variant="secondary" onClick={exportToPDFUbicaciones}>
+              <MapPin size={20} />
+              PDF Ubicaciones
             </Button>
           </div>
         </div>
