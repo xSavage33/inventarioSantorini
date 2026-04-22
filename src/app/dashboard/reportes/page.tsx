@@ -201,6 +201,7 @@ export default function ReportesPage() {
 
     const doc = new jsPDF()
     const pageWidth = doc.internal.pageSize.getWidth()
+    const pageHeight = doc.internal.pageSize.getHeight()
     const date = new Date().toLocaleDateString('es-CO', {
       year: 'numeric',
       month: 'long',
@@ -213,49 +214,75 @@ export default function ReportesPage() {
     const grayDark: [number, number, number] = [51, 51, 51] // #333333
     const white: [number, number, number] = [255, 255, 255]
 
+    let logoBase64: string | null = null
+
     // Cargar logo
     try {
       const logoResponse = await fetch('/logo.png')
       const logoBlob = await logoResponse.blob()
-      const logoBase64 = await new Promise<string>((resolve) => {
+      logoBase64 = await new Promise<string>((resolve) => {
         const reader = new FileReader()
         reader.onloadend = () => resolve(reader.result as string)
         reader.readAsDataURL(logoBlob)
       })
-      // Agregar logo (circular, 25x25mm)
-      doc.addImage(logoBase64, 'PNG', 14, 8, 25, 25)
     } catch (e) {
-      // Si no carga el logo, mostrar texto
-      doc.setFontSize(20)
-      doc.setFont('helvetica', 'bold')
-      doc.setTextColor(...primary)
-      doc.text('S', 22, 22)
+      logoBase64 = null
     }
 
-    // Header con linea
-    doc.setFillColor(...primary)
-    doc.rect(0, 0, pageWidth, 3, 'F')
+    // Funcion para dibujar header
+    const drawHeader = () => {
+      // Header con linea
+      doc.setFillColor(...primary)
+      doc.rect(0, 0, pageWidth, 3, 'F')
 
-    // Titulo al lado del logo
-    doc.setFontSize(22)
-    doc.setFont('helvetica', 'bold')
-    doc.setTextColor(...primary)
-    doc.text('SANTORINI', 44, 18)
-    doc.setFontSize(10)
-    doc.setFont('helvetica', 'normal')
-    doc.setTextColor(100, 100, 100)
-    doc.text('TERRAZA BAR', 44, 24)
+      // Logo
+      if (logoBase64) {
+        doc.addImage(logoBase64, 'PNG', 14, 8, 25, 25)
+      } else {
+        doc.setFontSize(20)
+        doc.setFont('helvetica', 'bold')
+        doc.setTextColor(...primary)
+        doc.text('S', 22, 22)
+      }
 
-    // Info derecha
-    doc.setFontSize(9)
-    doc.setTextColor(100, 100, 100)
-    doc.text('Reporte de Inventario', pageWidth - 14, 15, { align: 'right' })
-    doc.text(date, pageWidth - 14, 21, { align: 'right' })
+      // Titulo al lado del logo
+      doc.setFontSize(22)
+      doc.setFont('helvetica', 'bold')
+      doc.setTextColor(...primary)
+      doc.text('SANTORINI', 44, 18)
+      doc.setFontSize(10)
+      doc.setFont('helvetica', 'normal')
+      doc.setTextColor(100, 100, 100)
+      doc.text('TERRAZA BAR', 44, 24)
 
-    // Linea separadora
-    doc.setDrawColor(...primary)
-    doc.setLineWidth(0.5)
-    doc.line(14, 38, pageWidth - 14, 38)
+      // Info derecha
+      doc.setFontSize(9)
+      doc.setTextColor(100, 100, 100)
+      doc.text('Reporte de Inventario', pageWidth - 14, 15, { align: 'right' })
+      doc.text(date, pageWidth - 14, 21, { align: 'right' })
+
+      // Linea separadora
+      doc.setDrawColor(...primary)
+      doc.setLineWidth(0.5)
+      doc.line(14, 38, pageWidth - 14, 38)
+    }
+
+    // Funcion para dibujar footer
+    const drawFooter = (pageNumber: number, totalPages: number) => {
+      doc.setFontSize(8)
+      doc.setTextColor(150, 150, 150)
+      doc.text(
+        `Santorini Terraza Bar - Pagina ${pageNumber} de ${totalPages}`,
+        pageWidth / 2,
+        pageHeight - 10,
+        { align: 'center' }
+      )
+      doc.setFillColor(...primary)
+      doc.rect(0, pageHeight - 3, pageWidth, 3, 'F')
+    }
+
+    // Dibujar header en primera pagina
+    drawHeader()
 
     // Titulo principal
     doc.setFontSize(16)
@@ -274,7 +301,7 @@ export default function ReportesPage() {
     doc.setFontSize(10)
     doc.setFont('helvetica', 'bold')
     doc.setTextColor(...primary)
-    doc.text('Resumen', pageWidth / 2, boxY + 8, { align: 'center' })
+    doc.text('Resumen General', pageWidth / 2, boxY + 8, { align: 'center' })
 
     doc.setFont('helvetica', 'normal')
     doc.setTextColor(...grayDark)
@@ -297,59 +324,115 @@ export default function ReportesPage() {
     doc.setFont('helvetica', 'bold')
     doc.text(`${resumen.productosConStock} con stock`, col1X + 50, row2Y)
 
-    // Tabla de productos
-    const tableData = filteredTotales.map((prod) => [
-      prod.producto_nombre,
-      prod.categoria,
-      prod.subcategoria || '-',
-      prod.cantidad_total.toString(),
-      formatCurrency(prod.precio),
-      formatCurrency(prod.valor_total),
-    ])
+    let currentY = boxY + boxHeight + 15
 
-    ;(doc as any).autoTable({
-      startY: boxY + boxHeight + 10,
-      head: [['Producto', 'Categoria', 'Subcategoria', 'Cant.', 'Precio', 'Valor Total']],
-      body: tableData,
-      styles: {
-        fontSize: 8,
-        cellPadding: 3,
-        textColor: grayDark,
-      },
-      headStyles: {
-        fillColor: primary,
-        textColor: white,
-        fontStyle: 'bold',
-        halign: 'center',
-      },
-      alternateRowStyles: {
-        fillColor: primaryLight,
-      },
-      columnStyles: {
-        0: { cellWidth: 45 },
-        1: { cellWidth: 30 },
-        2: { cellWidth: 30 },
-        3: { halign: 'center', cellWidth: 15 },
-        4: { halign: 'right', cellWidth: 25 },
-        5: { halign: 'right', cellWidth: 30, fontStyle: 'bold' },
-      },
-      didDrawPage: (data: any) => {
-        // Footer en cada pagina
-        const pageCount = doc.getNumberOfPages()
-        doc.setFontSize(8)
-        doc.setTextColor(150, 150, 150)
-        doc.text(
-          `Santorini Terraza Bar - Pagina ${data.pageNumber} de ${pageCount}`,
-          pageWidth / 2,
-          doc.internal.pageSize.getHeight() - 10,
-          { align: 'center' }
-        )
+    // Agrupar por categoria y ordenar por subcategoria y cantidad
+    const categoriasList = Object.keys(groupedTotales).sort()
 
-        // Linea en footer
-        doc.setFillColor(...primary)
-        doc.rect(0, doc.internal.pageSize.getHeight() - 3, pageWidth, 3, 'F')
-      },
+    categoriasList.forEach((categoria, catIndex) => {
+      const productos = groupedTotales[categoria]
+
+      // Ordenar productos: primero por subcategoria, luego por cantidad (menor a mayor)
+      const productosOrdenados = [...productos].sort((a, b) => {
+        const subA = a.subcategoria || ''
+        const subB = b.subcategoria || ''
+        if (subA !== subB) return subA.localeCompare(subB)
+        return a.cantidad_total - b.cantidad_total
+      })
+
+      // Calcular totales de la categoria
+      const catTotal = productos.reduce((sum, p) => sum + p.valor_total, 0)
+      const catUnidades = productos.reduce((sum, p) => sum + p.cantidad_total, 0)
+
+      // Verificar si hay espacio para el titulo + al menos unas filas
+      if (currentY > pageHeight - 60) {
+        doc.addPage()
+        drawHeader()
+        currentY = 50
+      }
+
+      // Titulo de categoria
+      doc.setFillColor(...primary)
+      doc.roundedRect(14, currentY, pageWidth - 28, 10, 2, 2, 'F')
+      doc.setFontSize(11)
+      doc.setFont('helvetica', 'bold')
+      doc.setTextColor(...white)
+      doc.text(categoria, 18, currentY + 7)
+
+      // Info de categoria
+      doc.setFontSize(9)
+      doc.text(`${catUnidades} uds. | ${formatCurrency(catTotal)}`, pageWidth - 18, currentY + 7, { align: 'right' })
+
+      currentY += 14
+
+      // Preparar datos de tabla con agrupacion por subcategoria
+      const tableData: any[] = []
+      let currentSubcat = ''
+
+      productosOrdenados.forEach((prod) => {
+        const subcat = prod.subcategoria || 'Sin subcategoria'
+
+        // Agregar fila de subcategoria si cambia
+        if (subcat !== currentSubcat) {
+          currentSubcat = subcat
+          if (prod.subcategoria) {
+            tableData.push([
+              { content: `▸ ${subcat}`, colSpan: 4, styles: { fontStyle: 'bold', fillColor: [235, 230, 235], textColor: primary } }
+            ])
+          }
+        }
+
+        tableData.push([
+          prod.producto_nombre,
+          prod.cantidad_total.toString(),
+          formatCurrency(prod.precio),
+          formatCurrency(prod.valor_total),
+        ])
+      })
+
+      // Tabla de productos
+      ;(doc as any).autoTable({
+        startY: currentY,
+        head: [['Producto', 'Cant.', 'Precio', 'Valor Total']],
+        body: tableData,
+        styles: {
+          fontSize: 8,
+          cellPadding: 2,
+          textColor: grayDark,
+        },
+        headStyles: {
+          fillColor: [80, 40, 80],
+          textColor: white,
+          fontStyle: 'bold',
+          halign: 'center',
+        },
+        alternateRowStyles: {
+          fillColor: primaryLight,
+        },
+        columnStyles: {
+          0: { cellWidth: 80 },
+          1: { halign: 'center', cellWidth: 20 },
+          2: { halign: 'right', cellWidth: 35 },
+          3: { halign: 'right', cellWidth: 40, fontStyle: 'bold' },
+        },
+        margin: { left: 14, right: 14 },
+        didDrawPage: () => {
+          // Solo dibuja header si es una pagina nueva (no la primera)
+          if (doc.getCurrentPageInfo().pageNumber > 1) {
+            drawHeader()
+          }
+        },
+      })
+
+      currentY = (doc as any).lastAutoTable.finalY + 12
     })
+
+    // Agregar footers a todas las paginas
+    const totalPages = doc.getNumberOfPages()
+    for (let i = 1; i <= totalPages; i++) {
+      doc.setPage(i)
+      drawFooter(i, totalPages)
+    }
 
     doc.save(`inventario-santorini-${new Date().toISOString().split('T')[0]}.pdf`)
   }
