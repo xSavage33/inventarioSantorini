@@ -215,6 +215,7 @@ export default function ReportesPage() {
     const white: [number, number, number] = [255, 255, 255]
 
     let logoBase64: string | null = null
+    const pagesWithHeader: Set<number> = new Set()
 
     // Cargar logo
     try {
@@ -229,9 +230,12 @@ export default function ReportesPage() {
       logoBase64 = null
     }
 
-    // Funcion para dibujar header
-    const drawHeader = () => {
-      // Header con linea
+    // Funcion para dibujar header (solo si no se ha dibujado en esta pagina)
+    const drawHeader = (pageNum: number) => {
+      if (pagesWithHeader.has(pageNum)) return
+      pagesWithHeader.add(pageNum)
+
+      // Linea superior
       doc.setFillColor(...primary)
       doc.rect(0, 0, pageWidth, 3, 'F')
 
@@ -267,22 +271,8 @@ export default function ReportesPage() {
       doc.line(14, 38, pageWidth - 14, 38)
     }
 
-    // Funcion para dibujar footer
-    const drawFooter = (pageNumber: number, totalPages: number) => {
-      doc.setFontSize(8)
-      doc.setTextColor(150, 150, 150)
-      doc.text(
-        `Santorini Terraza Bar - Pagina ${pageNumber} de ${totalPages}`,
-        pageWidth / 2,
-        pageHeight - 10,
-        { align: 'center' }
-      )
-      doc.setFillColor(...primary)
-      doc.rect(0, pageHeight - 3, pageWidth, 3, 'F')
-    }
-
     // Dibujar header en primera pagina
-    drawHeader()
+    drawHeader(1)
 
     // Titulo principal
     doc.setFontSize(16)
@@ -325,11 +315,13 @@ export default function ReportesPage() {
     doc.text(`${resumen.productosConStock} con stock`, col1X + 50, row2Y)
 
     let currentY = boxY + boxHeight + 15
+    const headerHeight = 45
+    const footerHeight = 15
 
     // Agrupar por categoria y ordenar por subcategoria y cantidad
     const categoriasList = Object.keys(groupedTotales).sort()
 
-    categoriasList.forEach((categoria, catIndex) => {
+    categoriasList.forEach((categoria) => {
       const productos = groupedTotales[categoria]
 
       // Ordenar productos: primero por subcategoria, luego por cantidad (menor a mayor)
@@ -345,10 +337,11 @@ export default function ReportesPage() {
       const catUnidades = productos.reduce((sum, p) => sum + p.cantidad_total, 0)
 
       // Verificar si hay espacio para el titulo + al menos unas filas
-      if (currentY > pageHeight - 60) {
+      if (currentY > pageHeight - 70) {
         doc.addPage()
-        drawHeader()
-        currentY = 50
+        const pageNum = doc.getNumberOfPages()
+        drawHeader(pageNum)
+        currentY = headerHeight
       }
 
       // Titulo de categoria
@@ -377,7 +370,7 @@ export default function ReportesPage() {
           currentSubcat = subcat
           if (prod.subcategoria) {
             tableData.push([
-              { content: `▸ ${subcat}`, colSpan: 4, styles: { fontStyle: 'bold', fillColor: [235, 230, 235], textColor: primary } }
+              { content: `► ${subcat}`, colSpan: 4, styles: { fontStyle: 'bold', fillColor: [235, 230, 235], textColor: primary } }
             ])
           }
         }
@@ -415,12 +408,10 @@ export default function ReportesPage() {
           2: { halign: 'right', cellWidth: 35 },
           3: { halign: 'right', cellWidth: 40, fontStyle: 'bold' },
         },
-        margin: { left: 14, right: 14 },
-        didDrawPage: () => {
-          // Solo dibuja header si es una pagina nueva (no la primera)
-          if (doc.getCurrentPageInfo().pageNumber > 1) {
-            drawHeader()
-          }
+        margin: { left: 14, right: 14, top: headerHeight, bottom: footerHeight },
+        didDrawPage: (data: any) => {
+          const pageNum = data.pageNumber
+          drawHeader(pageNum)
         },
       })
 
@@ -431,7 +422,18 @@ export default function ReportesPage() {
     const totalPages = doc.getNumberOfPages()
     for (let i = 1; i <= totalPages; i++) {
       doc.setPage(i)
-      drawFooter(i, totalPages)
+      // Linea inferior
+      doc.setFillColor(...primary)
+      doc.rect(0, pageHeight - 3, pageWidth, 3, 'F')
+      // Texto de pagina
+      doc.setFontSize(8)
+      doc.setTextColor(150, 150, 150)
+      doc.text(
+        `Santorini Terraza Bar - Pagina ${i} de ${totalPages}`,
+        pageWidth / 2,
+        pageHeight - 7,
+        { align: 'center' }
+      )
     }
 
     doc.save(`inventario-santorini-${new Date().toISOString().split('T')[0]}.pdf`)
