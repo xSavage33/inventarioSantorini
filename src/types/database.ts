@@ -217,6 +217,16 @@ export type Producto = Database['public']['Tables']['productos']['Row']
 export type Inventario = Database['public']['Tables']['inventario']['Row']
 export type HistorialInventario = Database['public']['Tables']['historial_inventario']['Row']
 
+export interface SesionInventario {
+  id: string
+  nombre: string
+  fecha: string
+  notas: string | null
+  activa: boolean
+  created_at: string
+  updated_at: string
+}
+
 export type ProductoConCategoria = Producto & {
   categorias: Categoria | null
   subcategorias: Subcategoria | null

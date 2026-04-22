@@ -1,19 +1,15 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState } from 'react'
 import DashboardLayout from '@/components/DashboardLayout'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Select } from '@/components/ui/Select'
+import { Input } from '@/components/ui/Input'
+import { Modal } from '@/components/ui/Modal'
 import { supabase } from '@/lib/supabase'
-import { Save, MapPin, Package, Search, Minus, Plus, Check } from 'lucide-react'
-import type { Ubicacion, Categoria, ProductoConCategoria } from '@/types/database'
-
-interface InventarioItem {
-  producto_id: string
-  ubicacion_id: string
-  cantidad: number
-}
+import { Save, MapPin, Package, Search, Minus, Plus, Check, Calendar, PlusCircle } from 'lucide-react'
+import type { Ubicacion, Categoria, ProductoConCategoria, SesionInventario } from '@/types/database'
 
 export default function InventarioPage() {
   const [ubicaciones, setUbicaciones] = useState<Ubicacion[]>([])
@@ -21,6 +17,13 @@ export default function InventarioPage() {
   const [productos, setProductos] = useState<ProductoConCategoria[]>([])
   const [inventario, setInventario] = useState<Record<string, number>>({})
   const [originalInventario, setOriginalInventario] = useState<Record<string, number>>({})
+
+  // Sesiones
+  const [sesiones, setSesiones] = useState<SesionInventario[]>([])
+  const [selectedSesion, setSelectedSesion] = useState('')
+  const [sesionModalOpen, setSesionModalOpen] = useState(false)
+  const [nuevaSesion, setNuevaSesion] = useState({ nombre: '', notas: '' })
+  const [creatingSesion, setCreatingSesion] = useState(false)
 
   const [selectedUbicacion, setSelectedUbicacion] = useState('')
   const [selectedCategoria, setSelectedCategoria] = useState('')
@@ -35,33 +38,43 @@ export default function InventarioPage() {
   }, [])
 
   useEffect(() => {
-    if (selectedUbicacion) {
-      loadInventarioForUbicacion(selectedUbicacion)
+    if (selectedUbicacion && selectedSesion) {
+      loadInventarioForUbicacion(selectedUbicacion, selectedSesion)
     }
-  }, [selectedUbicacion])
+  }, [selectedUbicacion, selectedSesion])
 
   const loadInitialData = async () => {
     try {
-      const [ubicRes, catRes, prodRes] = await Promise.all([
-        supabase.from('ubicaciones').select('*').eq('activa', true).order('nombre'),
+      const [ubicRes, catRes, prodRes, sesRes] = await Promise.all([
+        supabase.from('ubicaciones').select('*').eq('activa', true).order('orden'),
         supabase.from('categorias').select('*').eq('activa', true).order('orden'),
         supabase
           .from('productos')
           .select(`*, categorias (*), subcategorias (*)`)
           .eq('activo', true)
           .order('nombre'),
+        supabase.from('sesiones_inventario').select('*').order('fecha', { ascending: false }),
       ])
 
       if (ubicRes.error) throw ubicRes.error
       if (catRes.error) throw catRes.error
       if (prodRes.error) throw prodRes.error
+      if (sesRes.error) throw sesRes.error
 
       setUbicaciones(ubicRes.data || [])
       setCategorias(catRes.data || [])
       setProductos(prodRes.data || [])
+      setSesiones(sesRes.data || [])
 
+      // Seleccionar primera ubicación
       if (ubicRes.data && ubicRes.data.length > 0) {
         setSelectedUbicacion(ubicRes.data[0].id)
+      }
+
+      // Seleccionar sesión activa o la más reciente
+      if (sesRes.data && sesRes.data.length > 0) {
+        const activeSesion = sesRes.data.find(s => s.activa) || sesRes.data[0]
+        setSelectedSesion(activeSesion.id)
       }
     } catch (error) {
       console.error('Error loading data:', error)
@@ -70,12 +83,13 @@ export default function InventarioPage() {
     }
   }
 
-  const loadInventarioForUbicacion = async (ubicacionId: string) => {
+  const loadInventarioForUbicacion = async (ubicacionId: string, sesionId: string) => {
     try {
       const { data, error } = await supabase
         .from('inventario')
         .select('*')
         .eq('ubicacion_id', ubicacionId)
+        .eq('sesion_id', sesionId)
 
       if (error) throw error
 
@@ -110,11 +124,10 @@ export default function InventarioPage() {
   }
 
   const handleSave = async () => {
-    if (!selectedUbicacion) return
+    if (!selectedUbicacion || !selectedSesion) return
 
     setSaving(true)
     try {
-      // Solo guardar productos que cambiaron
       const changedProducts = productos.filter((prod) => {
         const currentQty = inventario[prod.id] || 0
         const originalQty = originalInventario[prod.id] || 0
@@ -128,19 +141,18 @@ export default function InventarioPage() {
         return
       }
 
-      // Crear array de updates para batch upsert
       const updates = changedProducts.map((prod) => ({
         producto_id: prod.id,
         ubicacion_id: selectedUbicacion,
+        sesion_id: selectedSesion,
         cantidad: inventario[prod.id] || 0,
         fecha_actualizacion: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       }))
 
-      // Una sola llamada a la base de datos
       const { error } = await supabase
         .from('inventario')
-        .upsert(updates, { onConflict: 'producto_id,ubicacion_id' })
+        .upsert(updates, { onConflict: 'producto_id,ubicacion_id,sesion_id' })
 
       if (error) throw error
 
@@ -153,6 +165,50 @@ export default function InventarioPage() {
     } finally {
       setSaving(false)
     }
+  }
+
+  const handleCreateSesion = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!nuevaSesion.nombre.trim()) return
+
+    setCreatingSesion(true)
+    try {
+      // Desactivar sesión actual
+      await supabase
+        .from('sesiones_inventario')
+        .update({ activa: false })
+        .eq('activa', true)
+
+      // Crear nueva sesión
+      const { data, error } = await supabase
+        .from('sesiones_inventario')
+        .insert({
+          nombre: nuevaSesion.nombre,
+          notas: nuevaSesion.notas || null,
+          fecha: new Date().toISOString().split('T')[0],
+          activa: true,
+        })
+        .select()
+        .single()
+
+      if (error) throw error
+
+      setSesiones([data, ...sesiones])
+      setSelectedSesion(data.id)
+      setSesionModalOpen(false)
+      setNuevaSesion({ nombre: '', notas: '' })
+      setInventario({})
+      setOriginalInventario({})
+    } catch (error) {
+      console.error('Error creating sesion:', error)
+      alert('Error al crear la sesión')
+    } finally {
+      setCreatingSesion(false)
+    }
+  }
+
+  const getCurrentSesion = () => {
+    return sesiones.find(s => s.id === selectedSesion)
   }
 
   const hasChanges = JSON.stringify(inventario) !== JSON.stringify(originalInventario)
@@ -180,6 +236,14 @@ export default function InventarioPage() {
     }).format(value)
   }
 
+  const formatDate = (dateStr: string) => {
+    return new Date(dateStr).toLocaleDateString('es-CO', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric'
+    })
+  }
+
   if (loading) {
     return (
       <DashboardLayout>
@@ -200,7 +264,7 @@ export default function InventarioPage() {
           </div>
           <Button
             onClick={handleSave}
-            disabled={saving || !hasChanges}
+            disabled={saving || !hasChanges || !selectedSesion}
             className={saved ? 'bg-green-600 hover:bg-green-700' : ''}
           >
             {saving ? (
@@ -221,6 +285,38 @@ export default function InventarioPage() {
             )}
           </Button>
         </div>
+
+        {/* Sesión activa */}
+        <Card className="border-blue-200 bg-blue-50">
+          <CardContent className="p-4">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <Calendar className="w-5 h-5 text-blue-600" />
+                <div>
+                  <p className="text-sm text-blue-600 font-medium">Sesión activa</p>
+                  <div className="flex items-center gap-2">
+                    <Select
+                      options={sesiones.map(s => ({
+                        value: s.id,
+                        label: `${s.nombre} (${formatDate(s.fecha)})`
+                      }))}
+                      value={selectedSesion}
+                      onChange={(e) => setSelectedSesion(e.target.value)}
+                      className="min-w-[250px]"
+                    />
+                  </div>
+                </div>
+              </div>
+              <Button onClick={() => setSesionModalOpen(true)} variant="secondary">
+                <PlusCircle size={18} />
+                Nueva Sesion
+              </Button>
+            </div>
+            {getCurrentSesion()?.notas && (
+              <p className="mt-2 text-sm text-gray-600 italic">{getCurrentSesion()?.notas}</p>
+            )}
+          </CardContent>
+        </Card>
 
         {/* Location and filters */}
         <Card>
@@ -277,8 +373,21 @@ export default function InventarioPage() {
           </CardContent>
         </Card>
 
+        {!selectedSesion && (
+          <Card>
+            <CardContent className="py-12 text-center text-gray-500">
+              <Calendar className="w-12 h-12 mx-auto mb-4 text-gray-300" />
+              <p>No hay sesiones de inventario.</p>
+              <Button onClick={() => setSesionModalOpen(true)} className="mt-4">
+                <PlusCircle size={18} />
+                Crear primera sesion
+              </Button>
+            </CardContent>
+          </Card>
+        )}
+
         {/* Inventory Grid */}
-        {Object.entries(groupedProductos).map(([categoria, prods]) => (
+        {selectedSesion && Object.entries(groupedProductos).map(([categoria, prods]) => (
           <Card key={categoria}>
             <CardHeader className="bg-gray-50">
               <CardTitle className="text-base">{categoria}</CardTitle>
@@ -340,7 +449,7 @@ export default function InventarioPage() {
           </Card>
         ))}
 
-        {filteredProductos.length === 0 && (
+        {selectedSesion && filteredProductos.length === 0 && (
           <Card>
             <CardContent className="py-12 text-center text-gray-500">
               No se encontraron productos
@@ -366,6 +475,46 @@ export default function InventarioPage() {
           </div>
         )}
       </div>
+
+      {/* Modal Nueva Sesión */}
+      <Modal
+        isOpen={sesionModalOpen}
+        onClose={() => setSesionModalOpen(false)}
+        title="Nueva Sesion de Inventario"
+      >
+        <form onSubmit={handleCreateSesion} className="space-y-4">
+          <Input
+            label="Nombre de la sesion"
+            value={nuevaSesion.nombre}
+            onChange={(e) => setNuevaSesion({ ...nuevaSesion, nombre: e.target.value })}
+            placeholder="Ej: Inventario Semana 15"
+            required
+          />
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Notas (opcional)
+            </label>
+            <textarea
+              value={nuevaSesion.notas}
+              onChange={(e) => setNuevaSesion({ ...nuevaSesion, notas: e.target.value })}
+              placeholder="Observaciones sobre este inventario..."
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              rows={3}
+            />
+          </div>
+          <p className="text-sm text-gray-500">
+            Al crear una nueva sesion, comenzaras con todas las cantidades en 0.
+          </p>
+          <div className="flex gap-3 justify-end pt-4">
+            <Button type="button" variant="secondary" onClick={() => setSesionModalOpen(false)}>
+              Cancelar
+            </Button>
+            <Button type="submit" disabled={creatingSesion}>
+              {creatingSesion ? 'Creando...' : 'Crear Sesion'}
+            </Button>
+          </div>
+        </form>
+      </Modal>
     </DashboardLayout>
   )
 }
