@@ -211,20 +211,12 @@ export default function CategoriasPage() {
     const [movedCat] = updatedCats.splice(index, 1)
     updatedCats.splice(newIndex, 0, movedCat)
 
-    // Actualizar orden en la base de datos
+    // Actualizar solo los 2 elementos que cambiaron
     try {
-      const updates = updatedCats.map((cat, i) => ({
-        id: cat.id,
-        orden: i + 1,
-      }))
-
-      for (const update of updates) {
-        await supabase
-          .from('categorias')
-          .update({ orden: update.orden })
-          .eq('id', update.id)
-      }
-
+      await Promise.all([
+        supabase.from('categorias').update({ orden: newIndex + 1 }).eq('id', movedCat.id),
+        supabase.from('categorias').update({ orden: index + 1 }).eq('id', categorias[newIndex].id)
+      ])
       loadCategorias()
     } catch (error) {
       console.error('Error reordering categorias:', error)
@@ -237,24 +229,15 @@ export default function CategoriasPage() {
     const newSubIndex = direction === 'up' ? subIndex - 1 : subIndex + 1
     if (newSubIndex < 0 || newSubIndex >= cat.subcategorias.length) return
 
-    const updatedSubs = [...cat.subcategorias]
-    const [movedSub] = updatedSubs.splice(subIndex, 1)
-    updatedSubs.splice(newSubIndex, 0, movedSub)
+    const movedSub = cat.subcategorias[subIndex]
+    const swappedSub = cat.subcategorias[newSubIndex]
 
-    // Actualizar orden en la base de datos
+    // Actualizar solo los 2 elementos que cambiaron
     try {
-      const updates = updatedSubs.map((sub, i) => ({
-        id: sub.id,
-        orden: i + 1,
-      }))
-
-      for (const update of updates) {
-        await supabase
-          .from('subcategorias')
-          .update({ orden: update.orden })
-          .eq('id', update.id)
-      }
-
+      await Promise.all([
+        supabase.from('subcategorias').update({ orden: newSubIndex + 1 }).eq('id', movedSub.id),
+        supabase.from('subcategorias').update({ orden: subIndex + 1 }).eq('id', swappedSub.id)
+      ])
       loadCategorias()
     } catch (error) {
       console.error('Error reordering subcategorias:', error)

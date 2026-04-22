@@ -125,23 +125,15 @@ export default function UbicacionesPage() {
     const newIndex = direction === 'up' ? index - 1 : index + 1
     if (newIndex < 0 || newIndex >= ubicaciones.length) return
 
-    const updatedList = [...ubicaciones]
-    const [moved] = updatedList.splice(index, 1)
-    updatedList.splice(newIndex, 0, moved)
+    const moved = ubicaciones[index]
+    const swapped = ubicaciones[newIndex]
 
+    // Actualizar solo los 2 elementos que cambiaron
     try {
-      const updates = updatedList.map((ub, i) => ({
-        id: ub.id,
-        orden: i + 1,
-      }))
-
-      for (const update of updates) {
-        await supabase
-          .from('ubicaciones')
-          .update({ orden: update.orden })
-          .eq('id', update.id)
-      }
-
+      await Promise.all([
+        supabase.from('ubicaciones').update({ orden: newIndex + 1 }).eq('id', moved.id),
+        supabase.from('ubicaciones').update({ orden: index + 1 }).eq('id', swapped.id)
+      ])
       loadUbicaciones()
     } catch (error) {
       console.error('Error reordering ubicaciones:', error)
