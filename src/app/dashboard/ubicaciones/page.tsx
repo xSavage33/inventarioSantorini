@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Modal } from '@/components/ui/Modal'
 import { supabase } from '@/lib/supabase'
-import { Plus, Edit2, Trash2, MapPin } from 'lucide-react'
+import { Plus, Edit2, Trash2, MapPin, ArrowUp, ArrowDown } from 'lucide-react'
 import type { Ubicacion } from '@/types/database'
 
 export default function UbicacionesPage() {
@@ -27,7 +27,7 @@ export default function UbicacionesPage() {
       const { data, error } = await supabase
         .from('ubicaciones')
         .select('*')
-        .order('nombre')
+        .order('orden')
 
       if (error) throw error
       setUbicaciones(data || [])
@@ -74,6 +74,7 @@ export default function UbicacionesPage() {
           .insert({
             nombre: formData.nombre,
             descripcion: formData.descripcion || null,
+            orden: ubicaciones.length + 1,
           })
 
         if (error) throw error
@@ -120,6 +121,33 @@ export default function UbicacionesPage() {
     }
   }
 
+  const moveUbicacion = async (index: number, direction: 'up' | 'down') => {
+    const newIndex = direction === 'up' ? index - 1 : index + 1
+    if (newIndex < 0 || newIndex >= ubicaciones.length) return
+
+    const updatedList = [...ubicaciones]
+    const [moved] = updatedList.splice(index, 1)
+    updatedList.splice(newIndex, 0, moved)
+
+    try {
+      const updates = updatedList.map((ub, i) => ({
+        id: ub.id,
+        orden: i + 1,
+      }))
+
+      for (const update of updates) {
+        await supabase
+          .from('ubicaciones')
+          .update({ orden: update.orden })
+          .eq('id', update.id)
+      }
+
+      loadUbicaciones()
+    } catch (error) {
+      console.error('Error reordering ubicaciones:', error)
+    }
+  }
+
   if (loading) {
     return (
       <DashboardLayout>
@@ -150,6 +178,7 @@ export default function UbicacionesPage() {
               <table className="w-full">
                 <thead className="bg-gray-50 border-b">
                   <tr>
+                    <th className="text-center px-4 py-4 text-sm font-semibold text-gray-600 w-16">Orden</th>
                     <th className="text-left px-6 py-4 text-sm font-semibold text-gray-600">Nombre</th>
                     <th className="text-left px-6 py-4 text-sm font-semibold text-gray-600">Descripcion</th>
                     <th className="text-center px-6 py-4 text-sm font-semibold text-gray-600">Estado</th>
@@ -157,8 +186,28 @@ export default function UbicacionesPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y">
-                  {ubicaciones.map((ubicacion) => (
+                  {ubicaciones.map((ubicacion, index) => (
                     <tr key={ubicacion.id} className="hover:bg-gray-50">
+                      <td className="px-4 py-4">
+                        <div className="flex items-center justify-center gap-1">
+                          <div className="flex flex-col gap-0.5">
+                            <button
+                              onClick={() => moveUbicacion(index, 'up')}
+                              disabled={index === 0}
+                              className="p-0.5 rounded hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed"
+                            >
+                              <ArrowUp size={14} className="text-gray-500" />
+                            </button>
+                            <button
+                              onClick={() => moveUbicacion(index, 'down')}
+                              disabled={index === ubicaciones.length - 1}
+                              className="p-0.5 rounded hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed"
+                            >
+                              <ArrowDown size={14} className="text-gray-500" />
+                            </button>
+                          </div>
+                        </div>
+                      </td>
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
                           <div className="p-2 bg-blue-100 rounded-lg">

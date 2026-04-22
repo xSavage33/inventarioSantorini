@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Modal } from '@/components/ui/Modal'
 import { supabase } from '@/lib/supabase'
-import { Plus, Edit2, Trash2, Tags, ChevronDown, ChevronRight } from 'lucide-react'
+import { Plus, Edit2, Trash2, Tags, ChevronDown, ChevronRight, ArrowUp, ArrowDown } from 'lucide-react'
 import type { Categoria, Subcategoria } from '@/types/database'
 
 interface CategoriaConSub extends Categoria {
@@ -202,6 +202,65 @@ export default function CategoriasPage() {
     }
   }
 
+  // Reordenar categoria
+  const moveCat = async (index: number, direction: 'up' | 'down') => {
+    const newIndex = direction === 'up' ? index - 1 : index + 1
+    if (newIndex < 0 || newIndex >= categorias.length) return
+
+    const updatedCats = [...categorias]
+    const [movedCat] = updatedCats.splice(index, 1)
+    updatedCats.splice(newIndex, 0, movedCat)
+
+    // Actualizar orden en la base de datos
+    try {
+      const updates = updatedCats.map((cat, i) => ({
+        id: cat.id,
+        orden: i + 1,
+      }))
+
+      for (const update of updates) {
+        await supabase
+          .from('categorias')
+          .update({ orden: update.orden })
+          .eq('id', update.id)
+      }
+
+      loadCategorias()
+    } catch (error) {
+      console.error('Error reordering categorias:', error)
+    }
+  }
+
+  // Reordenar subcategoria
+  const moveSub = async (catIndex: number, subIndex: number, direction: 'up' | 'down') => {
+    const cat = categorias[catIndex]
+    const newSubIndex = direction === 'up' ? subIndex - 1 : subIndex + 1
+    if (newSubIndex < 0 || newSubIndex >= cat.subcategorias.length) return
+
+    const updatedSubs = [...cat.subcategorias]
+    const [movedSub] = updatedSubs.splice(subIndex, 1)
+    updatedSubs.splice(newSubIndex, 0, movedSub)
+
+    // Actualizar orden en la base de datos
+    try {
+      const updates = updatedSubs.map((sub, i) => ({
+        id: sub.id,
+        orden: i + 1,
+      }))
+
+      for (const update of updates) {
+        await supabase
+          .from('subcategorias')
+          .update({ orden: update.orden })
+          .eq('id', update.id)
+      }
+
+      loadCategorias()
+    } catch (error) {
+      console.error('Error reordering subcategorias:', error)
+    }
+  }
+
   if (loading) {
     return (
       <DashboardLayout>
@@ -227,13 +286,29 @@ export default function CategoriasPage() {
         </div>
 
         <div className="space-y-4">
-          {categorias.map((cat) => (
+          {categorias.map((cat, catIndex) => (
             <Card key={cat.id}>
               <div
                 className="px-6 py-4 flex items-center justify-between cursor-pointer hover:bg-gray-50"
                 onClick={() => toggleExpand(cat.id)}
               >
                 <div className="flex items-center gap-3">
+                  <div className="flex flex-col gap-0.5" onClick={(e) => e.stopPropagation()}>
+                    <button
+                      onClick={() => moveCat(catIndex, 'up')}
+                      disabled={catIndex === 0}
+                      className="p-0.5 rounded hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed"
+                    >
+                      <ArrowUp size={14} className="text-gray-500" />
+                    </button>
+                    <button
+                      onClick={() => moveCat(catIndex, 'down')}
+                      disabled={catIndex === categorias.length - 1}
+                      className="p-0.5 rounded hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed"
+                    >
+                      <ArrowDown size={14} className="text-gray-500" />
+                    </button>
+                  </div>
                   {cat.subcategorias.length > 0 ? (
                     expanded[cat.id] ? (
                       <ChevronDown className="w-5 h-5 text-gray-400" />
@@ -274,12 +349,30 @@ export default function CategoriasPage() {
 
               {expanded[cat.id] && cat.subcategorias.length > 0 && (
                 <div className="border-t">
-                  {cat.subcategorias.map((sub) => (
+                  {cat.subcategorias.map((sub, subIndex) => (
                     <div
                       key={sub.id}
-                      className="px-6 py-3 pl-16 flex items-center justify-between hover:bg-gray-50 border-b last:border-b-0"
+                      className="px-6 py-3 pl-12 flex items-center justify-between hover:bg-gray-50 border-b last:border-b-0"
                     >
-                      <span className="text-gray-700">{sub.nombre}</span>
+                      <div className="flex items-center gap-3">
+                        <div className="flex flex-col gap-0.5">
+                          <button
+                            onClick={() => moveSub(catIndex, subIndex, 'up')}
+                            disabled={subIndex === 0}
+                            className="p-0.5 rounded hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed"
+                          >
+                            <ArrowUp size={12} className="text-gray-400" />
+                          </button>
+                          <button
+                            onClick={() => moveSub(catIndex, subIndex, 'down')}
+                            disabled={subIndex === cat.subcategorias.length - 1}
+                            className="p-0.5 rounded hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed"
+                          >
+                            <ArrowDown size={12} className="text-gray-400" />
+                          </button>
+                        </div>
+                        <span className="text-gray-700">{sub.nombre}</span>
+                      </div>
                       <div className="flex items-center gap-2">
                         <Button
                           variant="ghost"

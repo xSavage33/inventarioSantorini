@@ -14,6 +14,7 @@ CREATE TABLE ubicaciones (
     nombre VARCHAR(100) NOT NULL,
     descripcion TEXT,
     activa BOOLEAN DEFAULT true,
+    orden INTEGER DEFAULT 1,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
