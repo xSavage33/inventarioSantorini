@@ -16,8 +16,9 @@ import {
   MapPin,
   ChevronDown,
   ChevronRight,
+  Calendar,
 } from 'lucide-react'
-import type { Ubicacion, Categoria } from '@/types/database'
+import type { Ubicacion, Categoria, SesionInventario } from '@/types/database'
 
 interface TotalProducto {
   producto_id: string
@@ -40,6 +41,10 @@ export default function ReportesPage() {
   const [filterCategoria, setFilterCategoria] = useState('')
   const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({})
 
+  // Sesiones
+  const [sesiones, setSesiones] = useState<SesionInventario[]>([])
+  const [selectedSesion, setSelectedSesion] = useState('')
+
   const [resumen, setResumen] = useState({
     valorTotal: 0,
     unidadesTotal: 0,
@@ -47,29 +52,65 @@ export default function ReportesPage() {
   })
 
   useEffect(() => {
-    loadData()
+    loadInitialData()
   }, [])
 
-  const loadData = async () => {
+  useEffect(() => {
+    if (selectedSesion) {
+      loadData(selectedSesion)
+    }
+  }, [selectedSesion])
+
+  const loadInitialData = async () => {
     try {
-      const [ubicRes, catRes, prodRes, invRes] = await Promise.all([
+      const [ubicRes, catRes, sesRes] = await Promise.all([
         supabase.from('ubicaciones').select('*').eq('activa', true).order('orden'),
         supabase.from('categorias').select('*').eq('activa', true).order('orden'),
+        supabase.from('sesiones_inventario').select('*').order('fecha', { ascending: false }),
+      ])
+
+      if (ubicRes.error) throw ubicRes.error
+      if (catRes.error) throw catRes.error
+      if (sesRes.error) throw sesRes.error
+
+      setUbicaciones(ubicRes.data || [])
+      setCategorias(catRes.data || [])
+      setSesiones(sesRes.data || [])
+
+      // Expand all categories by default
+      const expanded: Record<string, boolean> = {}
+      ;(catRes.data || []).forEach((cat) => {
+        expanded[cat.nombre] = true
+      })
+      setExpandedCategories(expanded)
+
+      // Seleccionar sesión activa o la más reciente
+      if (sesRes.data && sesRes.data.length > 0) {
+        const activeSesion = sesRes.data.find(s => s.activa) || sesRes.data[0]
+        setSelectedSesion(activeSesion.id)
+      } else {
+        setLoading(false)
+      }
+    } catch (error) {
+      console.error('Error loading initial data:', error)
+      setLoading(false)
+    }
+  }
+
+  const loadData = async (sesionId: string) => {
+    setLoading(true)
+    try {
+      const [prodRes, invRes] = await Promise.all([
         supabase
           .from('productos')
           .select(`*, categorias (*), subcategorias (*)`)
           .eq('activo', true)
           .order('nombre'),
-        supabase.from('inventario').select('*'),
+        supabase.from('inventario').select('*').eq('sesion_id', sesionId),
       ])
 
-      if (ubicRes.error) throw ubicRes.error
-      if (catRes.error) throw catRes.error
       if (prodRes.error) throw prodRes.error
       if (invRes.error) throw invRes.error
-
-      setUbicaciones(ubicRes.data || [])
-      setCategorias(catRes.data || [])
 
       // Process totales
       const invMap: Record<string, Record<string, number>> = {}
@@ -109,18 +150,23 @@ export default function ReportesPage() {
 
       setTotales(totalesData)
       setResumen({ valorTotal, unidadesTotal, productosConStock })
-
-      // Expand all categories by default
-      const expanded: Record<string, boolean> = {}
-      ;(catRes.data || []).forEach((cat) => {
-        expanded[cat.nombre] = true
-      })
-      setExpandedCategories(expanded)
     } catch (error) {
       console.error('Error loading data:', error)
     } finally {
       setLoading(false)
     }
+  }
+
+  const formatDate = (dateStr: string) => {
+    return new Date(dateStr).toLocaleDateString('es-CO', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric'
+    })
+  }
+
+  const getCurrentSesion = () => {
+    return sesiones.find(s => s.id === selectedSesion)
   }
 
   const formatCurrency = (value: number) => {
@@ -196,7 +242,8 @@ export default function ReportesPage() {
     XLSX.utils.book_append_sheet(wb, ws2, 'Detalle por Ubicacion')
 
     const date = new Date().toISOString().split('T')[0]
-    XLSX.writeFile(wb, `inventario-santorini-${date}.xlsx`)
+    const sesionNombre = getCurrentSesion()?.nombre?.replace(/[^a-zA-Z0-9]/g, '-') || 'inventario'
+    XLSX.writeFile(wb, `${sesionNombre}-${date}.xlsx`)
   }
 
   const exportToPDF = async () => {
@@ -263,6 +310,10 @@ export default function ReportesPage() {
     doc.setTextColor(100, 100, 100)
     doc.text('Reporte de Inventario', pageWidth - 14, 15, { align: 'right' })
     doc.text(date, pageWidth - 14, 21, { align: 'right' })
+    const sesionActual = getCurrentSesion()
+    if (sesionActual) {
+      doc.text(`Sesión: ${sesionActual.nombre}`, pageWidth - 14, 27, { align: 'right' })
+    }
 
     // Linea separadora
     doc.setDrawColor(...primary)
@@ -439,7 +490,8 @@ export default function ReportesPage() {
       )
     }
 
-    doc.save(`inventario-categorias-${new Date().toISOString().split('T')[0]}.pdf`)
+    const sesionNombre = getCurrentSesion()?.nombre?.replace(/[^a-zA-Z0-9]/g, '-') || 'inventario'
+    doc.save(`${sesionNombre}-categorias-${new Date().toISOString().split('T')[0]}.pdf`)
   }
 
   const exportToPDFUbicaciones = async () => {
@@ -496,6 +548,10 @@ export default function ReportesPage() {
     doc.setFontSize(9)
     doc.text('Reporte por Ubicaciones', pageWidth - 14, 15, { align: 'right' })
     doc.text(date, pageWidth - 14, 21, { align: 'right' })
+    const sesionActual = getCurrentSesion()
+    if (sesionActual) {
+      doc.text(`Sesión: ${sesionActual.nombre}`, pageWidth - 14, 27, { align: 'right' })
+    }
 
     doc.setDrawColor(...primary)
     doc.setLineWidth(0.5)
@@ -638,7 +694,8 @@ export default function ReportesPage() {
       )
     }
 
-    doc.save(`inventario-ubicaciones-${new Date().toISOString().split('T')[0]}.pdf`)
+    const sesionNombreUb = getCurrentSesion()?.nombre?.replace(/[^a-zA-Z0-9]/g, '-') || 'inventario'
+    doc.save(`${sesionNombreUb}-ubicaciones-${new Date().toISOString().split('T')[0]}.pdf`)
   }
 
   if (loading) {
@@ -674,6 +731,44 @@ export default function ReportesPage() {
             </Button>
           </div>
         </div>
+
+        {/* Selector de Sesión */}
+        {sesiones.length > 0 && (
+          <Card className="border-blue-200 bg-blue-50">
+            <CardContent className="p-4">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+                <div className="flex items-center gap-3 flex-1">
+                  <Calendar className="w-5 h-5 text-blue-600" />
+                  <div className="flex-1">
+                    <p className="text-sm text-blue-600 font-medium">Sesión de inventario</p>
+                    <Select
+                      options={sesiones.map(s => ({
+                        value: s.id,
+                        label: `${s.nombre} (${formatDate(s.fecha)})${s.activa ? ' - Activa' : ''}`
+                      }))}
+                      value={selectedSesion}
+                      onChange={(e) => setSelectedSesion(e.target.value)}
+                      className="mt-1"
+                    />
+                  </div>
+                </div>
+              </div>
+              {getCurrentSesion()?.notas && (
+                <p className="mt-2 text-sm text-gray-600 italic">{getCurrentSesion()?.notas}</p>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
+        {sesiones.length === 0 && !loading && (
+          <Card className="border-yellow-200 bg-yellow-50">
+            <CardContent className="p-4 text-center">
+              <Calendar className="w-8 h-8 text-yellow-600 mx-auto mb-2" />
+              <p className="text-yellow-700">No hay sesiones de inventario creadas.</p>
+              <p className="text-sm text-yellow-600 mt-1">Ve a Inventario para crear tu primera sesión.</p>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Summary Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

@@ -3,9 +3,11 @@
 import { useEffect, useState } from 'react'
 import DashboardLayout from '@/components/DashboardLayout'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card'
+import { Select } from '@/components/ui/Select'
 import { supabase } from '@/lib/supabase'
-import { Package, MapPin, Tags, DollarSign, TrendingUp, ClipboardList } from 'lucide-react'
+import { Package, MapPin, Tags, DollarSign, TrendingUp, ClipboardList, Calendar } from 'lucide-react'
 import Link from 'next/link'
+import type { SesionInventario } from '@/types/database'
 
 interface Stats {
   totalProductos: number
@@ -23,13 +25,44 @@ export default function DashboardPage() {
     valorInventario: 0,
     totalUnidades: 0,
   })
+  const [sesiones, setSesiones] = useState<SesionInventario[]>([])
+  const [selectedSesion, setSelectedSesion] = useState('')
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    loadStats()
+    loadInitialData()
   }, [])
 
-  const loadStats = async () => {
+  useEffect(() => {
+    if (selectedSesion) {
+      loadStats(selectedSesion)
+    }
+  }, [selectedSesion])
+
+  const loadInitialData = async () => {
+    try {
+      const { data: sesionesData, error: sesError } = await supabase
+        .from('sesiones_inventario')
+        .select('*')
+        .order('fecha', { ascending: false })
+
+      if (sesError) throw sesError
+
+      setSesiones(sesionesData || [])
+
+      if (sesionesData && sesionesData.length > 0) {
+        const activeSesion = sesionesData.find(s => s.activa) || sesionesData[0]
+        setSelectedSesion(activeSesion.id)
+      } else {
+        setLoading(false)
+      }
+    } catch (error) {
+      console.error('Error loading sesiones:', error)
+      setLoading(false)
+    }
+  }
+
+  const loadStats = async (sesionId: string) => {
     try {
       const [productosRes, ubicacionesRes, categoriasRes, inventarioRes] = await Promise.all([
         supabase.from('productos').select('id', { count: 'exact' }).eq('activo', true),
@@ -38,7 +71,7 @@ export default function DashboardPage() {
         supabase.from('inventario').select(`
           cantidad,
           productos (precio)
-        `),
+        `).eq('sesion_id', sesionId),
       ])
 
       let valorTotal = 0
@@ -65,6 +98,18 @@ export default function DashboardPage() {
     } finally {
       setLoading(false)
     }
+  }
+
+  const formatDate = (dateStr: string) => {
+    return new Date(dateStr).toLocaleDateString('es-CO', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric'
+    })
+  }
+
+  const getCurrentSesion = () => {
+    return sesiones.find(s => s.id === selectedSesion)
   }
 
   const formatCurrency = (value: number) => {
@@ -136,6 +181,44 @@ export default function DashboardPage() {
           <h1 className="text-2xl font-bold text-gray-800">Panel Principal</h1>
           <p className="text-gray-500 mt-1">Resumen de tu inventario</p>
         </div>
+
+        {/* Selector de Sesión */}
+        {sesiones.length > 0 && (
+          <Card className="border-blue-200 bg-blue-50">
+            <CardContent className="p-4">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+                <div className="flex items-center gap-3 flex-1">
+                  <Calendar className="w-5 h-5 text-blue-600" />
+                  <div className="flex-1">
+                    <p className="text-sm text-blue-600 font-medium">Sesión de inventario</p>
+                    <Select
+                      options={sesiones.map(s => ({
+                        value: s.id,
+                        label: `${s.nombre} (${formatDate(s.fecha)})${s.activa ? ' - Activa' : ''}`
+                      }))}
+                      value={selectedSesion}
+                      onChange={(e) => setSelectedSesion(e.target.value)}
+                      className="mt-1"
+                    />
+                  </div>
+                </div>
+              </div>
+              {getCurrentSesion()?.notas && (
+                <p className="mt-2 text-sm text-gray-600 italic">{getCurrentSesion()?.notas}</p>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
+        {sesiones.length === 0 && !loading && (
+          <Card className="border-yellow-200 bg-yellow-50">
+            <CardContent className="p-4 text-center">
+              <Calendar className="w-8 h-8 text-yellow-600 mx-auto mb-2" />
+              <p className="text-yellow-700">No hay sesiones de inventario creadas.</p>
+              <p className="text-sm text-yellow-600 mt-1">Ve a Inventario para crear tu primera sesión.</p>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Stats Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
